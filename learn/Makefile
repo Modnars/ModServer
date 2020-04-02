@@ -1,8 +1,8 @@
 all:
-	gcc -Wall judgeEndian.c
+	gcc -Wall sendUrgData.c
 
 d:
-	gcc -Wall judgeEndian.c -g
+	gcc -Wall sendUrgData.c -g
 
 clean:
 	-rm -rf ./a.out ./*.dSYM
