@@ -219,3 +219,72 @@ int getpeername(int sockfd, struct sockaddr *address, socklen_t *address_len);
 /**
  * 5.12 网络信息API
  */
+
+/**
+ * 6.5 mmap函数和munmap函数
+ */
+#include <sys/mman.h>
+/**
+ * prot: 设置内存段的访问权限
+ *   PROT_READ, 内存段可读
+ *   PROT_WRITE, 内存段可写
+ *   PROT_EXEC, 内存段可执行
+ *   PROT_NONE, 内存段不能被访问
+ * flags: 控制内存段内容被修改后程序的行为
+ */
+void *mmap(void *start, size_t length, int prot, int flags, int fd, off_t offset);
+int munmap(void *start, size_t length);
+
+/**
+ * 6.6 splice函数
+ */
+#include <fcntl.h>
+/**
+ * splice函数用于在两个文件描述符之间移动数据，是一个零拷贝操作。
+ *
+ * fd_in: 待输入数据的文件描述符(如果是一个管道文件描述符，则off_in必须设置为NULL;
+ *        如果不是一个管道文件描述符(比如socket)，那么off_in表示从输入数据流的何处
+ *        开始读取数据。此时，若off_in被设置为NULL，则表示从输入数据流的当前偏移位置
+ *        读入；若off_in不为NULL，则它将指出具体的偏移位置)
+ * fd_out/off_out的含义与fd_in/off_in相同，不过用于输出数据流
+ * len: 指定移动数据的长度
+ * flags: 控制数据如何移动
+ */
+ssize_t splice(int fd_in, loff_t *off_in, int fd_out, loff_t *off_out, size_t len,
+        unsigned int flags);
+
+/**
+ * 6.7 tee函数
+ */
+#include <fcntl.h>
+/**
+ * tee函数: 
+ *     用于在两个管道文件描述符之间复制数据，是一个零拷贝操作。它不消耗数据，因此源文
+ * 件描述符上的数据依然可以用于后续的读操作。
+ *
+ * 参数的含义与splice相同(但fd_in和fd_out必须都是管道文件描述符)。
+ * 成功时返回在两个文件描述符之间复制的数据数量(字节数)。返回0表示没有复制任何数据。
+ * 失败时返回-1并设置errno。
+ */
+ssize_t tee(int fd_in, int fd_out, size_t len, unsigned int flags);
+
+/**
+ * 6.8 fcntl函数
+ */
+#include <fcntl.h>
+/**
+ * fcntl提供了对文件描述符的各种控制操作(另一种常见的控制文件描述符属性和行为的系统调
+ * 用是ioctl，且ioctl比fcntl能够执行更多的控制。
+ * fd: 被操作的文件描述符
+ * cmd: 指定执行何种类型的操作
+ */
+int fcntl(int fd, int cmd, ...);
+
+/**************************************************
+ * 第7章 Linux服务器程序规范
+ **************************************************/
+#include <syslog.h>
+void syslog(int priority, const char *message, ...);
+
+#include <syslog.h>
+void openlog(const char *ident, int logopt, int facility);
