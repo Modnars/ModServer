@@ -2,6 +2,7 @@
 // Author : Modnar
 // Date   : 2020/04/02
 
+#include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -12,6 +13,7 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <string.h>
+#include <fcntl.h>
 
 static const int BUF_SIZE = 1 << 10;
 
@@ -38,28 +40,40 @@ int main(int argc, char *argv[]) {
     ret = listen(sockfd, 5);
     assert(ret != -1);
 
-    struct sockaddr_in client;
-    socklen_t client_addrlength = sizeof(client);
-    int connfd = accept(sockfd, (struct sockaddr *)&client, &client_addrlength);
+    struct sockaddr_in cli_addr;
+    socklen_t client_addrlength = sizeof(cli_addr);
+    int connfd = accept(sockfd, (struct sockaddr *)&cli_addr, &client_addrlength);
     if (connfd < 0) {
         printf("Errno: %d\n", errno);
-    } else {
-        char buffer[BUF_SIZE];
-        memset(buffer, '\0', BUF_SIZE);
-        ret = recv(connfd, buffer, BUF_SIZE-1, 0);
-        printf("RECV(%dB): '%s'\n", ret, buffer);
-        
-        memset(buffer, '\0', BUF_SIZE);
-        ret = recv(connfd, buffer, BUF_SIZE-1, MSG_OOB);
-        printf("OOB_DATA(%dB): '%s'\n", ret, buffer);
+        close(sockfd);
+    } 
 
-        memset(buffer, '\0', BUF_SIZE);
-        ret = recv(connfd, buffer, BUF_SIZE-1, 0);
-        printf("RECV(%dB): '%s'\n", ret, buffer);
-
-        close(connfd);
+    char buffer[BUF_SIZE];
+    fd_set read_fds, exception_fds;
+    FD_ZERO(&read_fds);
+    FD_ZERO(&exception_fds);
+    while (1) {
+        memset(buffer, '\0', sizeof(buffer));
+        FD_SET(connfd, &read_fds);
+        FD_SET(connfd, &exception_fds);
+        ret = select(connfd+1, &read_fds, NULL, &exception_fds, NULL);
+        if (ret < 0) {
+            printf("Selection Failure.\n");
+            break;
+        }
+        if (FD_ISSET(connfd, &read_fds)) {
+            ret = recv(connfd, buffer, sizeof(buffer)-1, 0);
+            if (ret <= 0)
+                break;
+            printf("Received(%dB): '%s'\n", ret, buffer);
+        } else if (FD_ISSET(connfd, &exception_fds)) {
+            ret = recv(connfd, buffer, sizeof(buffer)-1, MSG_OOB);
+            if (ret <= 0)
+                break;
+            printf("MSG_OOB(%dB): '%s'\n", ret, buffer);
+        }
     }
-
+    close(connfd);
     close(sockfd);
     return EXIT_SUCCESS;
 }
