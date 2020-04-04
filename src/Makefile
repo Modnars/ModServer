@@ -1,4 +1,4 @@
-CC 	=gcc
+CC 	=g++
 CFLAGS	=-Wall
 SERVER  =server
 _SERVER =ModServer
@@ -7,11 +7,11 @@ _CLIENT =ModClient
 DEBUGER =lldb
 
 all :
-	$(CC) $(CFLAGS) $(SERVER).c -o $(_SERVER).out
-	$(CC) $(CFLAGS) $(CLIENT).c -o $(_CLIENT).out
+	$(CC) $(CFLAGS) $(SERVER).cpp -o $(_SERVER).out
+	$(CC) $(CFLAGS) $(CLIENT).cpp -o $(_CLIENT).out
 
 d :
-	$(CC) $(CFLAGS) $(SERVER).c -o $(_SERVER).out -g
+	$(CC) $(CFLAGS) $(SERVER).cpp -o $(_SERVER).out -g
 	$(DEBUGER) $(_SERVER).out
 
 s :

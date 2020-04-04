@@ -46,7 +46,7 @@ int main(int argc, char *argv[]) {
     if (connfd < 0) {
         printf("Errno: %d\n", errno);
         close(sockfd);
-    } 
+    }
 
     char buffer[BUF_SIZE];
     fd_set read_fds, exception_fds;

@@ -26,7 +26,7 @@
 struct client_data {
     sockaddr_in address;    /* 客户端socket地址 */
     int connfd;             /* socket文件描述符 */
-    pid_t pid;              /* 处理这个链接的子进程为PID */
+    pid_t pid;              /* 处理这个连接的子进程为PID */
     int pipefd[2];          /* 和父进程通信用的管道 */
 };
 

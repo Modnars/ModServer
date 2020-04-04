@@ -1,5 +1,44 @@
 # 笔记
 
+## 第5章 Linux网络编程基础API
+
+### 5.8 数据读写
+
+#### 5.8.1 TCP数据读写
+
+- TCP数据流读写的系统调用
+
+```cpp
+#include <sys/types.h>
+#include <sys/socket.h>
+// 读取sockfd上的数据
+// buf: 读缓冲区的位置  len: 读缓冲区的大小  flags: 通常设置为0即可
+// 调用成功时，返回实际读到的数据的长度，它可能小于我们的期望长度len，因而可能需要多次
+// 调用recv才能保证获取数据的完整；此外，recv可能返回0，这表示通信对方已经关闭了连接；
+// recv调用出错返回-1，并设置errno。
+ssize_t recv(int sockfd, void *buf, size_t len, int flags);
+// 向sockfd上写数据
+// buf: 指定的缓存区的位置
+// len: 缓冲区的大小
+ssize_t send(int sockfd, const void *buf, size_t len, int flags);
+// 关于flags参数的选择，参见《Linux高性能服务器编程》第88页
+```
+
+#### 5.8.2 UDP数据读写
+
+- UDP数据报读写的系统调用
+
+```cpp
+#include <sys/types.h>
+#include <sys/socket.h>
+// recvfrom读取sockfd上的数据，buf和len分别指定读缓冲区的位置和大小。由于UDP没有连接
+// 的概念，所以每次读取都要获取发送端的socket地址，且addrlen指定该地址的长度
+ssize_t recvfrom(int sockfd, void *buf, size_t len, int flags, 
+        struct sockaddr *src_addr, socklen_t *addrlen);
+ssize_t sendto(int sockfd, const void *buf, size_t len, int flags, 
+        const struct sockaddr *dest_addr, socklen_t addrlen);
+```
+
 ## 第11章 定时器
 
 ### 11.1 socket选项
@@ -26,7 +65,7 @@
 
 ### 14.2 创建线程和结束线程
 
-- 1. pthread\_create
+- _**pthread\_create**_
 
 ```cpp
 #include <pthread.h>
@@ -44,7 +83,7 @@ int pthread_create(pthread_t *thread, const pthread_attr_t *attr, void *(*start_
 typedef unsigned long int pthread_t;
 ```
 
-- 2. pthread\_exit
+- _**pthread\_exit**_
 
 ```cpp
 #include <pthread.h>
@@ -56,7 +95,7 @@ typedef unsigned long int pthread_t;
 void pthread_exit(void *retval);
 ```
 
-- 3. pthread\_join
+- _**pthread\_join**_
 
 ```cpp
 #include <pthread.h>
@@ -74,7 +113,7 @@ EINVAL  // 目标线程是不可回收的，或者已经有其他线程在回收
 ESRCH   // 目标线程不存在
 ```
 
-- 4. pthread\_cancel
+- _**pthread\_cancel**_
 
 ```cpp
 #include <pthread.h>
