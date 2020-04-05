@@ -2,6 +2,7 @@
 // Author : Modnar
 // Date   : 2020/04/04
 
+#include <iostream>
 #include <arpa/inet.h>
 #include <assert.h>
 #include <errno.h>
@@ -57,7 +58,7 @@ int setnonblocking(int fd) {
 
 // 添加监测文件描述符到changes中，监测的选项由用户自定义
 void addfd(int kq, struct kevent *changes, int *fd, int option) {
-    EV_SET(changes, *fd, option, EV_ADD | EV_ENABLE, 0, 0, fd);
+    EV_SET(changes, *fd, option, EV_ADD, 0, 0, fd);
     setnonblocking(*fd);
 }
 
@@ -118,19 +119,23 @@ void check(bool success, const char *errMsg, const char *successMsg) {
  *   share_mem: 共享内存起始地址
  */
 int run_child(int idx, client_data *users, char *share_mem) {
-    struct kevent changes[MAX_EVENT_NUMBER], events[MAX_EVENT_NUMBER];
+    struct kevent changes, events[MAX_EVENT_NUMBER];
     int child_kq = kqueue();
     assert(child_kq != -1);
     int connfd = users[idx].connfd;
-    addfd(child_kq, changes, &connfd, EVFILT_READ); // TODO
+    // addfd(child_kq, changes, &connfd, EVFILT_READ); // TODO
+    EV_SET(&changes, connfd, EVFILT_READ, EV_ADD, 0, 0, NULL);
+    kevent(kq, &changes, 1, NULL, 0, NULL);
     int pipefd = users[idx].pipefd[1];
-    addfd(child_kq, changes, &pipefd, EVFILT_READ); // TODO
+    // addfd(child_kq, changes, &pipefd, EVFILT_READ); // TODO
+    EV_SET(&changes, pipefd, EVFILT_READ, EV_ADD, 0, 0, NULL);
+    kevent(kq, &changes, 1, NULL, 0, NULL);
     int ret;
     addsig(SIGTERM, child_term_handler, false);
 
     while (!stop_child) {
-        int number = kevent(kq, changes, MAX_EVENT_NUMBER, events, MAX_EVENT_NUMBER, 
-                NULL);
+        // int number = kevent(kq, changes, MAX_EVENT_NUMBER, events, MAX_EVENT_NUMBER, NULL);
+        int number = kevent(kq, NULL, 0, events, MAX_EVENT_NUMBER, NULL);
         if ((number < 0) && (errno != EINTR)) { // TODO
             printf("KQUEUE FAILED\n");
             break;
@@ -215,13 +220,17 @@ int main(int argc, char *argv[]) {
     // 获得kqueue
     kq = kqueue();
     check((kq != -1), "[FAILED]: AT CREATE KQUEUE", "[OK]: AT CREATE KQUEUE");
-    struct kevent changes[MAX_EVENT_NUMBER], events[MAX_EVENT_NUMBER];
-    addfd(kq, changes, &listenfd, EVFILT_READ); // TODO
+    struct kevent changes, events[MAX_EVENT_NUMBER];
+    EV_SET(&changes, listenfd, EVFILT_READ, EV_ADD, 0, 0, NULL);
+    kevent(kq, &changes, 1, NULL, 0, NULL);
+    // addfd(kq, changes, &listenfd, EVFILT_READ); // TODO
 
     ret = socketpair(PF_UNIX, SOCK_STREAM, 0, sig_pipefd);
     assert(ret != -1);
     setnonblocking(sig_pipefd[1]);
-    addfd(kq, changes, &sig_pipefd[0], EVFILT_READ);
+    EV_SET(&changes, sig_pipefd[1], EVFILT_READ, EV_ADD, 0, 0, NULL);
+    kevent(kq, &changes, 1, NULL, 0, NULL);
+    // addfd(kq, &changes, &sig_pipefd[0], EVFILT_READ);
 
     // 注册信号处理函数
     addsig(SIGCHLD, sig_handler);
@@ -231,9 +240,11 @@ int main(int argc, char *argv[]) {
     bool stop_server = false;
     bool terminate = false;
 
+    // shm_unlink(shm_name);
     shmfd = shm_open(shm_name, O_CREAT | O_RDWR, 0666);
     assert(shmfd != -1);
     ret = ftruncate(shmfd, USER_LIMIT*BUFFER_SIZE);
+    // std::cout << shmfd << strerror(errno) << std::endl;
     assert(ret != -1);
 
     share_mem = (char *)mmap(NULL, USER_LIMIT*BUFFER_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, shmfd, 0);
@@ -241,7 +252,9 @@ int main(int argc, char *argv[]) {
     close(shmfd);
 
     while (!stop_server) {
-        int number = kevent(kq, changes, MAX_EVENT_NUMBER, events, MAX_EVENT_NUMBER, &timeout);
+        stop_server = true; // TODO TEST
+        int number = kevent(kq, NULL, 0, events, MAX_EVENT_NUMBER, &timeout);
+        std::cout << "Number: " << number << std::endl;
         if ((number < 0) && (errno != EINTR)) {
             printf("[FAILED]: AT KEVENT\n"); 
             break;
@@ -282,7 +295,10 @@ int main(int argc, char *argv[]) {
                 } else {
                     close(connfd);
                     close(users[user_count].pipefd[1]);
-                    addfd(kq, changes, &users[user_count].pipefd[0], EVFILT_READ);
+                    // TODO
+                    // addfd(kq, &changes, &users[user_count].pipefd[0], EVFILT_READ);
+                    EV_SET(&changes, users[user_count].pipefd[0], EVFILT_READ, EV_ADD, 0, 0, NULL);
+                    kevent(kq, &changes, 1, NULL, 0, NULL);
                     users[user_count].pid = pid;
                     sub_process[pid] = user_count;
                     ++user_count;
