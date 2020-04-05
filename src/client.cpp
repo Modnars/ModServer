@@ -42,6 +42,8 @@ int main(int argc, char *argv[]) {
             bzero(userMsg, BUFFER_SIZE);
             fgets(userMsg, BUFFER_SIZE, stdin);
             if (strncmp(userMsg, "exit", 4) == 0) break;
+            if (userMsg[strlen(userMsg)-1] == '\n')
+                userMsg[strlen(userMsg)-1] = '\0';
             send(sockfd, userMsg, strlen(userMsg), 0);
         }
     }

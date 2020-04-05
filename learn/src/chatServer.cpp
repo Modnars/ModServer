@@ -30,23 +30,24 @@ struct client_data {
     int pipefd[2];          /* 和父进程通信用的管道 */
 };
 
+// 共享内存名
 static const char *shm_name = "/my_shm";
-int sig_pipefd[2];
-int epollfd;
-int listenfd;
-int shmfd;
-char *share_mem = 0;
-/* 客户连接数组，进程用客户连接的编号来索引这个数组，即可获得相关的用户连接数据 */
+int sig_pipefd[2];      // 信号管道
+int epollfd;            // epoll文件描述符
+int listenfd;           // 服务器socket描述符
+int shmfd;              // 共享内存描述符
+char *share_mem = 0;    // 共享内存起始位置
+// 客户连接数组，进程用客户连接的编号来索引这个数组，即可获得相关的用户连接数据
 client_data *users = 0;
 /** 
  * 子进程和客户连接的映射关系表。用进程的PID来索引这个数组，即可获得该进程所处理的
  * 客户连接的标号
  */
 int *sub_process = 0;
-/* 当前客户数量 */
-int user_count = 0;
-bool stop_child = false;
+int user_count = 0;         // 当前客户数量
+bool stop_child = false;    // 停止子进程标识
 
+// 设置文件描述符fd为非阻塞状态，以便IO复用
 int setnonblocking(int fd) {
     int old_option = fcntl(fd, F_GETFL);
     int new_option = old_option | O_NONBLOCK;
@@ -54,10 +55,11 @@ int setnonblocking(int fd) {
     return old_option;
 }
 
+// 通过文件描述符添加时间到epoll事件表
 void addfd(int epollfd, int fd) {
     epoll_event event;
     event.data.fd = fd;
-    event.events = EPOLLIN | EPOLLET;
+    event.events = EPOLLIN | EPOLLET; // 指定边沿触发
     epoll_ctl(epollfd, EPOLL_CTL_ADD, fd, &event);
     setnonblocking(fd);
 }
@@ -65,7 +67,7 @@ void addfd(int epollfd, int fd) {
 void sig_handler(int sig) {
     int save_errno = errno;
     int msg = sig;
-    send(sig_pipefd[1], (char *)&msg, 1, 0);
+    send(sig_pipefd[1], (char *)&msg, 1, 0); 
     errno = save_errno;
 }
 
