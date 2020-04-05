@@ -39,6 +39,43 @@ ssize_t sendto(int sockfd, const void *buf, size_t len, int flags,
         const struct sockaddr *dest_addr, socklen_t addrlen);
 ```
 
+## 第6章 高级I/O函数
+
+### 6.1 _**pipe**_ 函数
+
+```cpp
+#include <unistd.h>
+/**
+ * 创建管道
+ *   将fd[0]、fd[1]作为管道的两端，往fd[1]中写入的数据可以从fd[0]中读出来，且方向不可
+ *   倒置。
+ * 函数成功时返回0，失败时返回-1并设置errno。
+ */
+int pipe(int fd[2]);
+```
+
+&#160; &#160; &#160; &#160; 关于管道，主要注意以下四种情况：
+
+- 1. 当对一个空的管道进行read操作时，会被阻塞；
+
+- 2. 当堆一个满的管道进行write操作时，会被阻塞；
+
+- 3. 如果管道的写端描述符fd[1]的数量减少至0，则fd[0]处会读到EOF；
+
+- 4. 如果管道的读端描述符fd[0]的数量减少至0，则fd[1]的写操作会失败，并引发SIGPIPE信号。
+
+&#160; &#160; &#160; &#160; 此外，socket的基础API中有一个socketpair函数。它能够方便地创建双向管道。其定义如下：
+
+```cpp
+#include <sys/types.h>
+#include <sys/socket.h>
+int socketpair(int domain, int type, int protocal, int fd[2]);
+```
+
+&#160; &#160; &#160; &#160; 其中，domain只能使用UNIX本地域协议族AF\_UNIX，因为我们仅能在本地使用这个双向管道。socketpair成功时返回0，失败时返回-1并设置errno。
+
+### 
+
 ## 第11章 定时器
 
 ### 11.1 socket选项
