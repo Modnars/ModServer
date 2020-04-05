@@ -25,7 +25,7 @@
 #define FD_LIMIT            65535
 #define MAX_EVENT_SIZE      1024
 
-// 处理一个客户连接必要的数据
+// 实现目标功能，记录的用户数据
 struct client_data {
     client_data() : idx(-1), clifd(-1) {
         message = new char[HISTORY_MSG_SIZE*BUFFER_SIZE];
@@ -39,9 +39,9 @@ struct client_data {
     char *message;          /* 历史消息 */
 };
 
-int user_count = 0;
-client_data *users = NULL;
-char *buffer = NULL;
+int user_count = 0;         // 用户总数, 可用于server查询命令
+client_data *users = NULL;  // 用户数据存储区域
+char *buffer = NULL;        // server处理数据缓冲区
 
 // 将文件描述符fd设置为非阻塞，以便于IO复用
 int setnonblocking(int fd) {
@@ -51,6 +51,13 @@ int setnonblocking(int fd) {
     return old_option;
 }
 
+/**
+ * 查找用户数据
+ *     支持按idx(用户标识符, 由server根据运行状态自动分配)、按connfd(用户连接描述符)
+ * 索引查找。若找到目标key，则返回该用户数据的idx，否则返回-1。
+ *   key: 查询索引
+ *   byConnfd: 查询条件选项，默认按idx进行搜索
+ */
 int search_user(int key, bool byConnfd = false) {
     if (byConnfd) {
         for (int i = 0; i < USER_LIMIT; ++i)
@@ -96,6 +103,7 @@ int main(int argc, char *argv[]) {
     const char *ip = argv[1];
     int port = atoi(argv[2]);
 
+    // ret用于记录数据及判断程序运行状态是否异常，listenfd为创建的socket描述符
     int ret, listenfd;
     // 初始化server地址
     struct sockaddr_in address;
@@ -116,7 +124,7 @@ int main(int argc, char *argv[]) {
     ret = listen(listenfd, USER_LIMIT);
     check((ret != -1), "[FAILED]: AT CREATE LISTEN", "[OK]: AT CREATE LISTEN");
 
-    // 初始化TIME_OUT设定
+    // 设定`超时时长`，若服务器在超时时长内未监听到任何消息，则关闭服务器
     struct timespec timeout = {120, 0};
     user_count = 0;
     users = new client_data[USER_LIMIT+1];
@@ -149,10 +157,11 @@ int main(int argc, char *argv[]) {
                     socklen_t cli_addrlen = sizeof(cli_addr);
                     int connfd = accept(listenfd, (struct sockaddr *)&cli_addr, &cli_addrlen);
                     if (connfd > 0) {
-                        int idx = search_user(-1); // 查找是否存在idx值为-1的位置
+                        // 查找是否存在idx值为-1的位置，用于分配用户存储空间
+                        int idx = search_user(-1);
                         if (idx >= 0) { // 仍有空间来存储该用户数据，将其加入并监听
                             setnonblocking(connfd); // 将connfd设置为非阻塞状态
-                            // 监听该客户端输入
+                            // 监听该连接的输入
                             EV_SET(&changes, connfd, EVFILT_READ, EV_ADD, 0, 0, NULL);
                             // 放入事件队列
                             kevent(kq, &changes, 1, NULL, 0, NULL);
@@ -162,7 +171,7 @@ int main(int argc, char *argv[]) {
                             users[idx].clifd = connfd;
                             users[idx].address = cli_addr;
                             ++user_count;
-                        } else { // 反馈无法加入信息，并关闭该连接
+                        } else { // 反馈无法增添用户，并关闭该用户请求连接
                             const char *info = "[FAILED]: TOO MUCH USERS!";
                             printf("%s\n", info);
                             send(connfd, info, strlen(info), 0);
