@@ -17,28 +17,47 @@
 #include <sys/mman.h>
 #include <sys/socket.h>
 #include <sys/types.h>
+#include <time.h>
 #include <unistd.h>
 
 #define USER_LIMIT          10
-#define HISTORY_MSG_SIZE    20
-#define BUFFER_SIZE         128
+#define HISTORY_MSG_SIZE    10
+#define TIME_STR_SIZE       30
+#define BUFFER_SIZE         256
 #define FD_LIMIT            65535
 #define MAX_EVENT_SIZE      1024
 
+#define COLOR_CLEAN         "\e[0m"
+#define COLOR_BLUE          "\e[0;34m"
+#define COLOR_GREEN         "\e[0;32m"
+#define COLOR_RED           "\e[0;31m"
+#define COLOR_WHITE         "\e[1;37m"
+#define COLOR_YELLOW        "\e[1;33m"
+
+
 // 实现目标功能，记录的用户数据
 struct client_data {
-    client_data() : idx(-1), clifd(-1) {
+    client_data() : idx(-1), clifd(-1), currpos(-1), hislen(0) {
         message = new char[HISTORY_MSG_SIZE*BUFFER_SIZE];
+        timestamps = new struct tm[HISTORY_MSG_SIZE];
     }
-    ~client_data() { delete [] message; }
+    ~client_data() { 
+        delete [] message;
+        delete [] timestamps;
+    }
 
     sockaddr_in address;    /* 客户端socket地址 */
     int idx;                /* 用于记录用户注册聊天时的id */
     int clifd;              /* socket文件描述符 */
-    int tempstamp;          /* 时间戳 */
+    int currpos;            /* 标记用户当前状态(历史消息/时间戳) */
+    int hislen;             /* 记录历史消息总条数，最大值为HISTORY_MSG_SIZE */
     char *message;          /* 历史消息 */
+    struct tm loginTime;    /* 登录时间 */
+    struct tm *timestamps;  /* 时间戳 */
 };
 
+time_t currtime;            // 计算当前时间
+struct tm *ptm;             // 格式化存储时间
 int user_count = 0;         // 用户总数, 可用于server查询命令
 client_data *users = NULL;  // 用户数据存储区域
 char *buffer = NULL;        // server处理数据缓冲区
@@ -71,6 +90,30 @@ int search_user(int key, bool byConnfd = false) {
     return -1;
 }
 
+/**
+ * 处理用户idx历史消息
+ *     将用户历史消息缓存到buffer
+ */
+void execute_history_msg(int idx) {
+    int hislen = users[idx].hislen, pos;
+    bzero(buffer, HISTORY_MSG_SIZE*(TIME_STR_SIZE+BUFFER_SIZE));
+    if (hislen < HISTORY_MSG_SIZE) {
+        pos = 0;
+    } else {
+        pos = (users[idx].currpos + 1) % HISTORY_MSG_SIZE;
+    }
+    for (int i = 0; i < hislen; ++i) {
+        snprintf(buffer+i*(TIME_STR_SIZE+BUFFER_SIZE), TIME_STR_SIZE,
+                "[%d/%02d/%02d %02d:%02d:%02d]", 
+                users[idx].timestamps[pos].tm_year+1900, users[idx].timestamps[pos].tm_mon+1,
+                users[idx].timestamps[pos].tm_mday, users[idx].timestamps[pos].tm_hour,
+                users[idx].timestamps[pos].tm_min, users[idx].timestamps[pos].tm_sec);
+        strncpy(buffer+i*(TIME_STR_SIZE+BUFFER_SIZE)+TIME_STR_SIZE, users[idx].message+pos*BUFFER_SIZE,
+                BUFFER_SIZE);
+        pos = (pos + 1) % HISTORY_MSG_SIZE;
+    }
+}
+
 // 在服务器停止关闭时回收资源
 void del_resource() {
     delete [] users;
@@ -96,7 +139,7 @@ void check(bool res, const char *errMsg, const char *successMsg) {
 int main(int argc, char *argv[]) {
     // 处理程序传入参数
     if (argc <= 2) {
-        printf("usage: %s ip_address port_number\n", basename(argv[0]));
+        printf("%susage: %s ip_address port_number%s\n", COLOR_RED, basename(argv[0]), COLOR_CLEAN);
         return EXIT_FAILURE;
     }
     // 转换并存储IP、PORT数据
@@ -125,10 +168,11 @@ int main(int argc, char *argv[]) {
     check((ret != -1), "[FAILED]: AT CREATE LISTEN", "[OK]: AT CREATE LISTEN");
 
     // 设定`超时时长`，若服务器在超时时长内未监听到任何消息，则关闭服务器
-    struct timespec timeout = {120, 0};
+    struct timespec timeout = {60, 0};
     user_count = 0;
-    users = new client_data[USER_LIMIT+1];
-    buffer = new char[BUFFER_SIZE+1];
+    users = new client_data[USER_LIMIT];
+    // 为了处理历史消息请求，特将buffer设置足够大
+    buffer = new char[HISTORY_MSG_SIZE*(TIME_STR_SIZE+BUFFER_SIZE)];
 
     // 获得kqueue
     int kq = kqueue();
@@ -143,14 +187,16 @@ int main(int argc, char *argv[]) {
     while (!stop_server) {
         int number = kevent(kq, NULL, 0, events, MAX_EVENT_SIZE, &timeout);
         if ((number < 0) && (errno != EINTR)) {
-            printf("[FAILED]: AT KEVENT\n"); 
+            printf("%s[FAILED]: AT KEVENT%s\n", COLOR_RED, COLOR_CLEAN); 
             break;
         } else if (number == 0) { // 超时: 这里定义超时动作为关闭服务器
-            std::cout << "[TIME_OUT]: CLOSED THE SERVER." << std::endl;
+            printf("%s[TIME_OUT]: CLOSE THE SERVER.%s\n", COLOR_RED, COLOR_CLEAN);
             stop_server = true;
         } else { // 与epoll相似，直接对number进行遍历判断即可
             for (int i = 0; i < number; ++i) {
                 int sockfd = events[i].ident;
+                currtime = time(NULL);                  // 获取处理事件的时刻
+                ptm = localtime(&currtime);  // 格式化时间，得到时间存储对象指针ptm
                 // 为客户端建立新的连接
                 if (sockfd == listenfd) {
                     struct sockaddr_in cli_addr;
@@ -165,20 +211,30 @@ int main(int argc, char *argv[]) {
                             EV_SET(&changes, connfd, EVFILT_READ, EV_ADD, 0, 0, NULL);
                             // 放入事件队列
                             kevent(kq, &changes, 1, NULL, 0, NULL);
-                            printf("[SUCCESS]: CLIENT#%d(%s:%d) JOINED\n", idx,
-                                    inet_ntoa(cli_addr.sin_addr), ntohs(cli_addr.sin_port));
                             users[idx].idx = idx;
                             users[idx].clifd = connfd;
                             users[idx].address = cli_addr;
+                            users[idx].loginTime = *ptm; // 记录用户数据: 登录时间
                             ++user_count;
+                            // server日志信息: 打印用户加入信息及时间信息
+                            printf("%s[SUCCESS(%d/%02d/%02d %02d:%02d:%02d)]: CLIENT#%d(%s:%d) JOINED%s\n", 
+                                    COLOR_GREEN, ptm->tm_year+1900, ptm->tm_mon+1, ptm->tm_mday, ptm->tm_hour,
+                                    ptm->tm_min, ptm->tm_sec, users[idx].idx, inet_ntoa(cli_addr.sin_addr), 
+                                    ntohs(cli_addr.sin_port), COLOR_CLEAN);
+                            bzero(buffer, BUFFER_SIZE);
+                            snprintf(buffer, BUFFER_SIZE, "[WELCOME(%d/%02d/%02d %02d:%02d:%02d)]: Your ID is %d.",
+                                    users[idx].loginTime.tm_year+1900, users[idx].loginTime.tm_mon+1,
+                                    users[idx].loginTime.tm_mday, users[idx].loginTime.tm_hour,
+                                    users[idx].loginTime.tm_min, users[idx].loginTime.tm_sec, idx);
+                            send(connfd, buffer, BUFFER_SIZE, 0);
                         } else { // 反馈无法增添用户，并关闭该用户请求连接
                             const char *info = "[FAILED]: TOO MUCH USERS!";
-                            printf("%s\n", info);
+                            printf("%s%s%s\n", COLOR_RED, info, COLOR_CLEAN);
                             send(connfd, info, strlen(info), 0);
                             close(connfd);
                         }
                     } else { // accept返回值小于等于零
-                        printf("[ErrNo:%d]: %s\n", errno, strerror(errno));
+                        printf("%s[ErrNo:%d]: %s%s\n", COLOR_RED, errno, strerror(errno), COLOR_CLEAN);
                         continue;
                     }
                 } else { // 接收用户信息/状态
@@ -186,14 +242,38 @@ int main(int argc, char *argv[]) {
                     bzero(buffer, BUFFER_SIZE);
                     ret = recv(sockfd, buffer, BUFFER_SIZE, 0);
                     if (ret == 0) { // 用户退出客户端, 关闭连接，清除用户数据
-                        printf("[CLIENT#%d]: EXIT THE CHATTING\n", idx);
+                        printf("%s[EXIT_CHAT(%d/%02d/%02d %02d:%02d:%02d)]: CLIENT#%d EXIT THE CHAT%s\n", 
+                                COLOR_YELLOW, ptm->tm_year+1900, ptm->tm_mon+1, ptm->tm_mday, 
+                                ptm->tm_hour, ptm->tm_min, ptm->tm_sec, idx, COLOR_CLEAN);
                         EV_SET(&changes, sockfd, EVFILT_READ, EV_DELETE, 0, 0, NULL);
                         kevent(kq, &changes, 1, NULL, 0, NULL);
                         close(sockfd);
-                        users[idx].idx = -1;
+                        users[idx].idx = -1;        // 将users中该位置标识为无用户
+                        users[idx].currpos = -1;    // 重置该位置的历史消息/时间戳存储位置
+                        users[idx].hislen = 0;      // 重置该用户的历史记录数
                         --user_count;
                     } else if (ret > 0) { // 用户发来消息
-                        printf("[RECV(%dB)] CLIENT#%d: '%s'\n", ret, idx, buffer);
+                        if (!strncmp(buffer, "history", strlen("history"))) {
+                            execute_history_msg(idx);
+                            printf("%s[COMMAND: HISTORY] CLIENT#%d %d/%02d/%02d %02d:%02d:%02d%s\n",
+                                    COLOR_WHITE, idx, ptm->tm_year+1900, ptm->tm_mon+1, ptm->tm_mday, 
+                                    ptm->tm_hour, ptm->tm_min, ptm->tm_sec, COLOR_CLEAN);
+                            send(sockfd, buffer, HISTORY_MSG_SIZE*(TIME_STR_SIZE+BUFFER_SIZE), 0);
+                            continue;
+                        }
+                        // 更新用户历史消息/时间戳存储位置
+                        users[idx].currpos = (users[idx].currpos + 1) % HISTORY_MSG_SIZE;
+                        if (users[idx].hislen < HISTORY_MSG_SIZE) ++users[idx].hislen;  // 更新用户拥有记录数
+                        users[idx].timestamps[users[idx].currpos] = *ptm; // 记录用户发送消息时间戳
+                        strncpy(users[idx].message+users[idx].currpos*BUFFER_SIZE, buffer, BUFFER_SIZE); // TODO splice
+                        printf("%s[RECV(%d/%02d/%02d %02d:%02d:%02d/%2dB)] CLIENT#%d:'%s'%s\n", 
+                                COLOR_BLUE, ptm->tm_year+1900, ptm->tm_mon+1, ptm->tm_mday, 
+                                ptm->tm_hour, ptm->tm_min, ptm->tm_sec, ret, idx, buffer, COLOR_CLEAN);
+                        bzero(buffer, BUFFER_SIZE);
+                        snprintf(buffer, BUFFER_SIZE, "[OK] Time: %d/%02d/%02d %02d:%02d:%02d",
+                                ptm->tm_year+1900, ptm->tm_mon+1, ptm->tm_mday, ptm->tm_hour, 
+                                ptm->tm_min, ptm->tm_sec);
+                        send(sockfd, buffer, BUFFER_SIZE, 0);
                     } else { // 其他问题
                         printf("[CLIENT#%d]: WRONG STATUS\n", idx);
                     }

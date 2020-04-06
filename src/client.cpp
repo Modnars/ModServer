@@ -12,7 +12,22 @@
 #include <string.h>
 #include <stdlib.h>
 
-#define BUFFER_SIZE 1024
+#define HISTORY_MSG_SIZE    20
+#define TIME_STR_SIZE       30
+#define BUFFER_SIZE         256
+
+char *buffer;
+
+void print_history_msg() {
+    for (int pos = 0; pos < HISTORY_MSG_SIZE; ++pos) {
+        if (strlen(buffer+pos*(TIME_STR_SIZE+BUFFER_SIZE)) > 0) {
+            printf("%s %s\n", buffer+pos*(TIME_STR_SIZE+BUFFER_SIZE), 
+                    buffer+pos*(TIME_STR_SIZE+BUFFER_SIZE)+TIME_STR_SIZE);
+        } else {
+            break;
+        }
+    }
+}
 
 int main(int argc, char *argv[]) {
     if (argc <= 2) {
@@ -32,19 +47,33 @@ int main(int argc, char *argv[]) {
     int sockfd = socket(PF_INET, SOCK_STREAM, 0);
     assert(sockfd >= 0);
 
-    char userMsg[BUFFER_SIZE];
-    if (connect(sockfd, (struct sockaddr *)&server_address, 
-                sizeof(server_address)) < 0) {
+    char userMsg[BUFFER_SIZE], recvMsg[BUFFER_SIZE];
+    buffer = new char[HISTORY_MSG_SIZE*(TIME_STR_SIZE+BUFFER_SIZE)];
+
+    if (connect(sockfd, (struct sockaddr *)&server_address, sizeof(server_address)) < 0) {
         printf("connection failed\n");
     } else {
+        bzero(userMsg, BUFFER_SIZE);
+        recv(sockfd, recvMsg, BUFFER_SIZE, 0);
+        printf("%s\n", recvMsg);
         while (true) {
             printf(">> ");
             bzero(userMsg, BUFFER_SIZE);
+            bzero(recvMsg, BUFFER_SIZE);
             fgets(userMsg, BUFFER_SIZE, stdin);
             if (strncmp(userMsg, "exit", 4) == 0) break;
             if (userMsg[strlen(userMsg)-1] == '\n')
                 userMsg[strlen(userMsg)-1] = '\0';
+            // 这里仅考虑客户端处于稳定的网络环境下，因此并未对下列函数进行异常分析
             send(sockfd, userMsg, strlen(userMsg), 0);
+            if (strncmp(userMsg, "history", strlen("history")) == 0) {
+                bzero(buffer, HISTORY_MSG_SIZE*(TIME_STR_SIZE+BUFFER_SIZE));
+                recv(sockfd, buffer, HISTORY_MSG_SIZE*(TIME_STR_SIZE+BUFFER_SIZE), 0);
+                print_history_msg();
+                continue;
+            }
+            recv(sockfd, recvMsg, BUFFER_SIZE, 0);
+            printf("%s\n", recvMsg);
         }
     }
     close(sockfd);
