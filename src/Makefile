@@ -1,6 +1,6 @@
 CC 	=g++
 CFLAGS	=-Wall
-SERVER  =server
+SERVER  =chatServer
 _SERVER =ModServer
 CLIENT	=client
 _CLIENT =ModClient
