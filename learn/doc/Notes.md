@@ -1,5 +1,9 @@
 # 笔记
 
+## 说明
+
+&#160; &#160; &#160; &#160; 以下所有章节顺序及序号，均来自于**《Linux高性能服务器编程》**这本书。这本书总体来说很适合学习实践，且书中会针对一些需要注意的地方进行强调，适合反复读一读，挑选自己经常需要的内容进行消化理解。
+
 ## 第5章 Linux网络编程基础API
 
 ### 5.8 数据读写
@@ -23,6 +27,8 @@ ssize_t recv(int sockfd, void *buf, size_t len, int flags);
 ssize_t send(int sockfd, const void *buf, size_t len, int flags);
 // 关于flags参数的选择，参见《Linux高性能服务器编程》第88页
 ```
+
+&#160; &#160; &#160; &#160; Linux下对于“文件读”、“文件写”分别提供了`read`和`write`方法。当然这里的socket文件描述符`sockfd`也是被抽象成的一种文件，所以也可以使用这样的方法进行读写(书中所述，未做尝试)，而采用`recv`和`send`则是针对socket文件描述符的一种系统调用，所以对于网络编程数据传输，还是尽量采用这样的方式来进行数据读写。
 
 #### 5.8.2 UDP数据读写
 
@@ -74,7 +80,124 @@ int socketpair(int domain, int type, int protocal, int fd[2]);
 
 &#160; &#160; &#160; &#160; 其中，domain只能使用UNIX本地域协议族AF\_UNIX，因为我们仅能在本地使用这个双向管道。socketpair成功时返回0，失败时返回-1并设置errno。
 
-### 
+### 6.2 _**dup**_ 函数和 _**dup2**_ 函数
+
+&#160; &#160; &#160; &#160; 可以通过用于复制文件描述符的dup或dup2函数来实现将标准输入重定向到一个文件，或者将标准输出重定向到一个网络连接。
+
+```cpp
+#include <unistd.h>
+int dup(int file_descriptor);
+int dup2(int file_descriptor_one, int file_descriptor_two);
+```
+
+&#160; &#160; &#160; &#160; dup函数创建一个新的文件描述符，这个新的文件描述符和原有的文件描述符指向相同的文件、管道或者网络连接，且dup返回的文件描述符总是取系统可提供的最小整数值。
+
+&#160; &#160; &#160; &#160; dup2和dup类似，但它会返回第一个不小于file_descriptor_two的整数值。二者系统调用失败时均返回-1并设置errno。
+
+> **注意**: <br/>&#160; &#160; &#160; &#160; 通过dup和dup2创建的文件描述符并不继承原文件描述符的属性，比如close-on-exec和non-blocking等。
+
+### 6.3 _**readv**_ 函数和 _**writev**_ 函数
+
+&#160; &#160; &#160; &#160; readv函数将数据从文件描述符读到分散的内存块中，即分散读；writev函数则将多块分散的内存数据一并写入到文件描述符中，即集中写。
+
+```cpp
+#include <sys/uio.h>
+/**
+ * 将数据从分散块中读或将数据写到分散块中
+ *   fd: 被操作的目标文件描述符
+ *   vector: iovec结构数组，该结构体描述一块内存区
+ *   count: vector数组的长度，即有多少块内存数据需要从fd读出或写到fd
+ * 成功时返回读出/写入fd的字节数，失败则返回-1并设置errno。他们相当于简化版的recvmsg和sendmsg函数。
+ */
+ssize_t readv(int fd, const struct iovec *vector, int count);
+ssize_t writev(int fd, const struct iovec *vector, int count);
+```
+
+### 6.4 _**sendfile**_ 函数
+
+&#160; &#160; &#160; &#160; `sendfile`函数在两个文件描述符之间直接传递数据(完全在内核中操作)，从而避免了内核缓冲区和用户缓冲区之间的数据拷贝，效率很高，这被称为零拷贝。
+
+```cpp
+#include <sys/sendfile.h>
+/**
+ * 在文件描述符间直接传递数据
+ *   in_fd/out_fd分别为待读/待写文件描述符。
+ *   offset: 指定从读入文件流的哪个位置开始读，如果为空，则采用读入文件流默认起始位置。
+ *   count: 指定在文件描述符in_fd和out_fd之间传输的字节数。
+ * 函数成功时返回传输的字节数，失败时返回-1并设置errno。
+ */
+ssize_t sendfile(int out_fd, int in_fd, off_t *offset, size_t count);
+```
+
+&#160; &#160; &#160; &#160; 该函数的man手册明确指出，`in_fd`必须是一个支持类似mmap函数的文件描述符，即它必须指向真实的文件，不能是socket和管道；而`out_fd`则必须是一个socket。由此可见，sendfile几乎是专门为在网络上传输文件而设计的。
+
+### 6.5 _**mmap**_ 函数和 _**munmap**_ 函数
+
+&#160; &#160; &#160; &#160; `mmap`用于申请一段内存，且这段内存可用于共享内存，也可以将文件直接映射到其中；`munmap`则用于释放由`mmap`创建的内存空间。
+
+```cpp
+#include <sys/mman.h>
+/**
+ * 申请一段内存空间
+ *   start: 使用用户传入的地址作为这段内存空间的起始地址，若为NULL，则由系统进行分配
+ *   length: 指定内存段长度
+ *   prot: 设置内存段访问权限(PROT_READ 可读；PROT_WRITE 可写；EXEC 可执行；NONE 不能被访问)
+ *   flags: 控制内存段内容被修改后程序的行为(例如MAP_SHARED共享)
+ *   fd: 被映射文件对应的文件描述符，一般通过open系统调用获得
+ *   offset: 设置从何处开始映射
+ * 调用成功返回指向目标区域的指针，失败则返回MAP_FAILED((void *)-1)并设置errno。
+ */
+void *mmap(void *start, size_t length, int prot, int flags, int fd, off_t offset);
+/**
+ * 释放由mmap申请的空间
+ * 成功时返回0，失败时返回-1并设置errno。
+ */
+int munmap(void *start, size_t length);
+```
+
+### 6.6 _**splice**_ 函数
+
+&#160; &#160; &#160; &#160; `splice`函数用于在两个文件描述符之间移动数据，也是零拷贝操作。
+
+```cpp
+#include <fcntl.h>
+/**
+ * 文件描述符之间移动数据
+ *   fd_in: 待输入数据的文件描述符，若fd_in是一个管道，则off_in必须为NULL；若fd_in不是一
+ *          个管道(比如socket)，那么off_in表示从输入数据流的何处开始读数据
+ *   len: 指定移动数据的长度
+ *   flags: 控制数据如何移动
+ * 成功时返回移动字节的数量，可能为0，表示没有数据需要移动，这发生在从管道中读取数据而
+ * 该管道没有被写入任何数据时。调用失败时返回-1并设置errno。
+ */
+ssize_t splice(int fd_in, loff_t *off_in, int fd_out, loff_t *off_out, size_t len,
+        unsigned int flags);
+```
+
+### 6.7 _**tee**_ 函数
+
+&#160; &#160; &#160; &#160; `tee`函数用于在两个管道文件描述符之间复制数据，也是零拷贝操作。它不消耗数据。
+
+```cpp
+#include <fcntl.h>
+/**
+ * 函数参数含义与splice相同(但fd_in和fd_out必须都是管道文件描述符)
+ * 调用成功时返回在两个文件描述符之间复制的数据总量(字节数)。
+ * 返回0表示没有复制任何数据。失败时返回-1并设置errno。
+ */
+ssize_t tee(int fd_in, int fd_out, size_t len, unsigned int flags);
+```
+
+### 6.8 _**fcntl**_ 函数
+
+&#160; &#160; &#160; &#160; `fcntl`函数(file control)，提供对文件描述符的各种控制操作。
+
+```cpp
+#include <fcntl.h>
+int fcntl(int fd, int cmd, ...);
+```
+
+&#160; &#160; &#160; &#160; 常用的场景就是可以通过`fcntl`函数将文件设置为`非阻塞`的。
 
 ## 第11章 定时器
 
