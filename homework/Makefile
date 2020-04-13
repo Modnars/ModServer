@@ -1,15 +1,14 @@
 CC 	=g++
 CFLAGS	=-Wall
-SERVER  =server
+SERVER  =chatServer
 _SERVER =ModServer
 CLIENT	=client
 _CLIENT =ModClient
 DEBUGER =lldb
-HEADER	=include
 
 all :
-	$(CC) $(CFLAGS) -I$(HEADER) $(SERVER).cpp -o $(_SERVER).out
-	$(CC) $(CFLAGS) -I$(HEADER) $(CLIENT).cpp -o $(_CLIENT).out
+	$(CC) $(CFLAGS) $(SERVER).cpp -o $(_SERVER).out
+	$(CC) $(CFLAGS) $(CLIENT).cpp -o $(_CLIENT).out
 
 d :
 	$(CC) $(CFLAGS) $(SERVER).cpp -o $(_SERVER).out -g
