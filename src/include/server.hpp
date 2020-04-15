@@ -7,17 +7,30 @@
 
 #include <string>
 
-class ClientData {
-public:
-    ClientData() : _clifd(-1) { }
-    void setCliFd(int fd);
-    void setUserName(const std::string &name);
-    void setLoginTime(struct tm *currTime);
+extern const int USER_LIMIT;
+extern const int HISTORY_MSG_NUM;
+extern const int USER_INFO_SIZE;
+extern const int MESSAGE_SIZE;
+extern const int BUFFER_SIZE;
+extern const int FD_LIMIT;
+extern const int EVENT_LIMIT;
 
-private:
-    int _clifd;
-    std::string _name;
-    struct tm _loginTime;
+struct client_data {
+    client_data() : uid(-1), clifd(-1) { }
+
+    int uid;                /* 记录用户注册聊天时的ID */
+    int clifd;              /* 记录用户socket文件描述符 */
+    sockaddr_in address;    /* 客户端socket地址 */
+    struct tm loginTime;    /* 登录时间 */
+};
+
+struct message_data {
+    message_data() : uid(-1) { message = new char[MESSAGE_SIZE]; }
+    ~message_data() { delete [] message; }
+
+    int uid;
+    char *message;
+    struct tm time;
 };
 
 #endif /* _SERVER_HPP */
