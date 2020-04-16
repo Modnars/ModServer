@@ -86,7 +86,7 @@ void add_user_message(int uid, char *message, struct tm *currTime) {
     modified = true;
     messages[curr_msg_pos].uid = uid;
     bzero(messages[curr_msg_pos].message, MESSAGE_SIZE);
-    strncpy(messages[curr_msg_pos].message, message, MESSAGE_SIZE);
+    strncpy(messages[curr_msg_pos].message, message, MESSAGE_SIZE-1);
     messages[curr_msg_pos].time = *currTime;
     if (msg_count < HISTORY_MSG_NUM) ++msg_count;
     curr_msg_pos = (curr_msg_pos + 1) % HISTORY_MSG_NUM;
@@ -102,7 +102,7 @@ void execute_history_message() {
         }
         for (int i = 0; i != msg_count; ++i) {
             snprintf(historyMsgBuffer+i*BUFFER_SIZE, BUFFER_SIZE, 
-                    "[%d/%02d/%02d %02d:%02d:%02d] @%d:\t%s", 
+                    "[%d/%02d/%02d %02d:%02d:%02d] @%d: %s", 
                     messages[(pos+i)%HISTORY_MSG_NUM].time.tm_year+1900, 
                     messages[(pos+i)%HISTORY_MSG_NUM].time.tm_mon+1, 
                     messages[(pos+i)%HISTORY_MSG_NUM].time.tm_mday, 
@@ -125,9 +125,9 @@ void release_resource() {
 
 /**
  * 检查fd是否是一个合法文件描述符
- *   res: 判断结果(若为true，表示成功；否则表示失败)
- *   succMsg: 日志信息(创建成功)
- *   errMsg: 日志信息(创建失败)
+ * @param: res: 判断结果(若为true，表示成功；否则表示失败)
+ * @param: succMsg: 日志信息(创建成功)
+ * @param: errMsg: 日志信息(创建失败)
  * 若fd非法，打印失败日志并终止当前进程; 否则打印创建成功日志信息
  */
 void check(bool res, const char *succMsg, const char *errMsg) {

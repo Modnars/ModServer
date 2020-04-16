@@ -15,14 +15,14 @@
 const int HISTORY_MSG_NUM   = 10;
 const int USER_INFO_SIZE    = 64;
 const int MESSAGE_SIZE      = 256;
+const int BUFFER_SIZE       = USER_INFO_SIZE + MESSAGE_SIZE;
 
 char *buffer;
 
 void print_history_msg() {
     for (int pos = 0; pos < HISTORY_MSG_NUM; ++pos) {
-        if (strlen(buffer+pos*(USER_INFO_SIZE+MESSAGE_SIZE)) > 0) {
-            printf("%s %s\n", buffer+pos*(USER_INFO_SIZE+MESSAGE_SIZE), 
-                    buffer+pos*(USER_INFO_SIZE+MESSAGE_SIZE)+USER_INFO_SIZE);
+        if (strlen(buffer+pos*BUFFER_SIZE) > 0) {
+            printf("%s\n", buffer+pos*BUFFER_SIZE); 
         } else {
             break;
         }
@@ -48,7 +48,7 @@ int main(int argc, char *argv[]) {
     assert(sockfd >= 0);
 
     char userMsg[MESSAGE_SIZE], recvMsg[MESSAGE_SIZE];
-    buffer = new char[HISTORY_MSG_NUM*(USER_INFO_SIZE+MESSAGE_SIZE)];
+    buffer = new char[HISTORY_MSG_NUM*BUFFER_SIZE];
 
     if (connect(sockfd, (struct sockaddr *)&server_address, sizeof(server_address)) < 0) {
         printf("connection failed\n");
@@ -67,8 +67,8 @@ int main(int argc, char *argv[]) {
             // 这里仅考虑客户端处于稳定的网络环境下，因此并未对下列函数进行异常分析
             send(sockfd, userMsg, strlen(userMsg), 0);
             if (strncmp(userMsg, "history", strlen("history")) == 0) {
-                bzero(buffer, HISTORY_MSG_NUM*(USER_INFO_SIZE+MESSAGE_SIZE));
-                recv(sockfd, buffer, HISTORY_MSG_NUM*(USER_INFO_SIZE+MESSAGE_SIZE), 0);
+                bzero(buffer, HISTORY_MSG_NUM*BUFFER_SIZE);
+                recv(sockfd, buffer, HISTORY_MSG_NUM*BUFFER_SIZE, 0);
                 print_history_msg();
                 continue;
             }
