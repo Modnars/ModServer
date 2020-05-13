@@ -1,6 +1,6 @@
-// Name   : server.cpp
+// Name   : command.cpp
 // Author : Modnar
-// Date   : 2020/04/16
+// Date   : 2020/05/13
 // Copyright (c) 2020 Modnar. All rights reserved.
 
 #include "command.hpp"
