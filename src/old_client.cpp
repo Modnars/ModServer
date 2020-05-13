@@ -66,7 +66,8 @@ int main(int argc, char *argv[]) {
                 userMsg[strlen(userMsg)-1] = '\0';
             // 这里仅考虑客户端处于稳定的网络环境下，因此并未对下列函数进行异常分析
             send(sockfd, userMsg, strlen(userMsg), 0);
-            if (strncmp(userMsg, "history", strlen("history")) == 0) {
+            // if (strncmp(userMsg, "history", strlen("history")) == 0) {
+            if (strlen(userMsg) > 0 && userMsg[0] == '$') {
                 bzero(buffer, HISTORY_MSG_NUM*BUFFER_SIZE);
                 recv(sockfd, buffer, HISTORY_MSG_NUM*BUFFER_SIZE, 0);
                 print_history_msg();

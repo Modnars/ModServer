@@ -7,4 +7,6 @@
 
 #include "server.hpp"
 
+extern void process_history_message();
+
 #endif /* _COMMAND_HPP */

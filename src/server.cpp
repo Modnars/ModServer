@@ -1,26 +1,12 @@
 // Name   : server.cpp
 // Author : Modnar
 // Date   : 2020/04/16
+// Copyright (c) 2020 Modnar. All rights reserved.
 
-#include <iostream>
-#include <arpa/inet.h>
-#include <assert.h>
-#include <errno.h>
-#include <fcntl.h>
-#include <libgen.h>
-#include <netinet/in.h>
-#include <signal.h>
-#include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
-#include <sys/event.h>
-#include <sys/mman.h>
-#include <sys/socket.h>
-#include <sys/types.h>
-#include <time.h>
-#include <unistd.h>
 
 #include "server.hpp"
+#include "command.hpp"
 
 const int USER_LIMIT        = 10;
 const int HISTORY_MSG_NUM   = 10;
@@ -30,31 +16,38 @@ const int BUFFER_SIZE       = USER_INFO_SIZE + MESSAGE_SIZE;
 const int FD_LIMIT          = 65535;
 const int EVENT_LIMIT       = 1024;
 
+const char *COLOR_CLEAN  = "\e[0m";
+const char *COLOR_BLUE   = "\e[0;34m";
+const char *COLOR_GREEN  = "\e[0;32m";
+const char *COLOR_RED    = "\e[0;31m";
+const char *COLOR_WHITE  = "\e[1;37m";
+const char *COLOR_YELLOW = "\e[1;33m";
+
+char *buffer = nullptr;             /* 用于缓存服务器状态信息/处理用户发送来的信息缓冲区 */
+char *historyMsgBuffer = nullptr;   
+client_data *users = nullptr;       /* 用于记录用户数据 */
+int user_count = 0;                 /* 用于记录在线用户数 */
+message_data *messages = nullptr;   /* 用于记录存储历史消息 */
+int msg_count = 0;                  /* 用于记录当前消息区消息总数 */
+int curr_msg_pos;                   /* 用于记录当前消息存应储于历史消息区的位置 */
+bool modified = true;               /* 用于优化，标识服务器数据内容(messages)是否被修改 */
+
+int setnonblocking(int fd);
+void check(bool res, const char *succMsg, const char *errMsg);
+int search_user(int key, bool byConnfd = false);
+void add_user_message(int uid, char *message, struct tm *currTime);
+void release_resource();
+
 // C++的文件作用域(相当于C的static)
 namespace {
-    const char *COLOR_CLEAN  = "\e[0m";
-    const char *COLOR_BLUE   = "\e[0;34m";
-    const char *COLOR_GREEN  = "\e[0;32m";
-    const char *COLOR_RED    = "\e[0;31m";
-    const char *COLOR_WHITE  = "\e[1;37m";
-    const char *COLOR_YELLOW = "\e[1;33m";
-
-    time_t currtime; // 用于获取当前时间
     struct tm *ptm;  // 格式化记录当前时间
-
-    char *buffer = nullptr;             /* 用于缓存服务器状态信息/处理用户发送来的信息缓冲区 */
-    // int shmfd;
-    // const char *shm_name = "/my_shm";
-    char *historyMsgBuffer = nullptr;   /* 服务器上记录的用户历史消息缓冲区 */
-    bool modified;                      /* 用于优化查询效率，避免server总是刷新historyMsgBuffer */
-    client_data *users = nullptr;       /* 用于记录用户数据 */
-    int user_count;                     /* 用于记录在线用户数 */
-    message_data *messages = nullptr;   /* 用于记录存储历史消息 */
-    int curr_msg_pos;                   /* 用于记录当前消息存应储于历史消息区的位置 */
-    int msg_count;                      /* 用于记录当前历史消息区消息总数 */
 }
 
-// 将文件描述符fd设置为非阻塞，以便于IO复用
+/**
+ * 将文件描述符fd设置为非阻塞，以便于IO复用
+ * @param fd: 待修改的文件描述符
+ * @return: 文件原本的文件状态码
+ */
 int setnonblocking(int fd) {
     int old_option = fcntl(fd, F_GETFL);
     int new_option = old_option | O_NONBLOCK;
@@ -63,13 +56,30 @@ int setnonblocking(int fd) {
 }
 
 /**
+ * 检查fd是否是一个合法文件描述符
+ * @param res: 判断结果(若为true，表示成功；否则表示失败)
+ * @param succMsg: 日志信息(创建成功)
+ * @param errMsg: 日志信息(创建失败)
+ * 若fd非法，打印失败日志并终止当前进程; 否则打印创建成功日志信息
+ */
+void check(bool res, const char *succMsg, const char *errMsg) {
+    if (res) {
+        printf("%s\n", succMsg);
+    } else {
+        perror(errMsg);
+        exit(EXIT_FAILURE);
+    }
+}
+
+/**
  * 查找用户数据
  *     支持按ID(用户标识符, 由server根据运行状态自动分配)、按connfd(用户连接描述符)
  * 索引查找。若找到目标key，则返回该用户数据的uid，否则返回-1。
- * @param: key: 查询索引
- * @param: byConnfd: 查询条件选项，默认按idx进行搜索
+ * @param key: 查询索引
+ * @param byConnfd: 查询条件选项，默认按idx进行搜索
+ * @return: 若找到目标key，则返回该用户数据的的uid；否则返回-1
  */
-int search_user(int key, bool byConnfd = false) {
+int search_user(int key, bool byConnfd) {
     if (byConnfd) {
         for (int i = 0; i < USER_LIMIT; ++i)
             if (users[i].clifd == key)
@@ -92,51 +102,15 @@ void add_user_message(int uid, char *message, struct tm *currTime) {
     curr_msg_pos = (curr_msg_pos + 1) % HISTORY_MSG_NUM;
 }
 
-void execute_history_message() {
-    if (modified) {
-        int pos;
-        if (msg_count < HISTORY_MSG_NUM) {
-            pos = 0;
-        } else {
-            pos = curr_msg_pos;
-        }
-        for (int i = 0; i != msg_count; ++i) {
-            snprintf(historyMsgBuffer+i*BUFFER_SIZE, BUFFER_SIZE, 
-                    "[%d/%02d/%02d %02d:%02d:%02d] @%d: %s", 
-                    messages[(pos+i)%HISTORY_MSG_NUM].time.tm_year+1900, 
-                    messages[(pos+i)%HISTORY_MSG_NUM].time.tm_mon+1, 
-                    messages[(pos+i)%HISTORY_MSG_NUM].time.tm_mday, 
-                    messages[(pos+i)%HISTORY_MSG_NUM].time.tm_hour, 
-                    messages[(pos+i)%HISTORY_MSG_NUM].time.tm_min, 
-                    messages[(pos+i)%HISTORY_MSG_NUM].time.tm_sec, 
-                    messages[(pos+i)%HISTORY_MSG_NUM].uid,
-                    messages[(pos+i)%HISTORY_MSG_NUM].message);
-        }
-        modified = false;
-    }
-}
-
+/**
+ * 释放服务器资源
+ *     在服务器服务终止时被调用，以保证服务器资源按照预期被回收。
+ */
 void release_resource() {
     delete ptm;
     delete [] buffer;
     delete [] users;
     delete [] messages;
-}
-
-/**
- * 检查fd是否是一个合法文件描述符
- * @param: res: 判断结果(若为true，表示成功；否则表示失败)
- * @param: succMsg: 日志信息(创建成功)
- * @param: errMsg: 日志信息(创建失败)
- * 若fd非法，打印失败日志并终止当前进程; 否则打印创建成功日志信息
- */
-void check(bool res, const char *succMsg, const char *errMsg) {
-    if (res) {
-        printf("%s\n", succMsg);
-    } else {
-        perror(errMsg);
-        exit(EXIT_FAILURE);
-    }
 }
 
 int main(int argc, char *argv[]) {
@@ -172,14 +146,15 @@ int main(int argc, char *argv[]) {
 
     // 设定`超时时长`，若服务器在超时时长内未监听到任何消息，则关闭服务器
     struct timespec timeout = {60, 0};
+    time_t currtime; // 用于获取当前时间
     ptm = new struct tm;
     buffer = new char[MESSAGE_SIZE];
+    historyMsgBuffer = new char[HISTORY_MSG_NUM*BUFFER_SIZE];
     users = new client_data[USER_LIMIT];
     user_count = 0;
     messages = new message_data[HISTORY_MSG_NUM];
     msg_count = 0;
     curr_msg_pos = 0;
-    historyMsgBuffer = new char[HISTORY_MSG_NUM*BUFFER_SIZE];
 
     // 下面这两行代码用于回收因服务器异常退出而导致的`共享内存`未正常回收的问题
     // shm_unlink(shm_name);
@@ -275,8 +250,10 @@ int main(int argc, char *argv[]) {
                         users[idx].clifd = -1;
                         --user_count;
                     } else if (ret > 0) { // 用户发来消息
-                        if (!strncmp(buffer, "history", strlen("history"))) {
-                            execute_history_message();
+                        // 首先判断用户发送过来的消息是否是`客户端命令`。
+                        // if (!strncmp(buffer, "history", strlen("history"))) {
+                        if (strlen(buffer) > 0 && buffer[0] == '$') {
+                            process_history_message();
                             printf("%s[COMMAND: HISTORY] CLIENT#%d %d/%02d/%02d %02d:%02d:%02d%s\n",
                                     COLOR_WHITE, idx, ptm->tm_year+1900, ptm->tm_mon+1, ptm->tm_mday, 
                                     ptm->tm_hour, ptm->tm_min, ptm->tm_sec, COLOR_CLEAN);

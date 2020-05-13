@@ -1,6 +1,7 @@
 CC 	=g++
-CFLAGS	=-Wall
+CFLAGS	=-Wall -std=c++11
 SERVER  =server
+COMMAND =command
 _SERVER =ModServer
 CLIENT	=old_client
 _CLIENT =ModClient
@@ -8,7 +9,7 @@ DEBUGER =lldb
 HEADER	=include
 
 all :
-	$(CC) $(CFLAGS) -I$(HEADER) $(SERVER).cpp -o $(_SERVER).out
+	$(CC) $(CFLAGS) -I$(HEADER) $(SERVER).cpp $(COMMAND).cpp -o $(_SERVER).out
 	$(CC) $(CFLAGS) -I$(HEADER) $(CLIENT).cpp -o $(_CLIENT).out
 
 d :
