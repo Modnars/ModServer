@@ -253,10 +253,38 @@ int main(int argc, char *argv[]) {
                         // 首先判断用户发送过来的消息是否是`客户端命令`。
                         // if (!strncmp(buffer, "history", strlen("history"))) {
                         if (strlen(buffer) > 0 && buffer[0] == '$') {
-                            process_history_message();
-                            printf("%s[COMMAND: HISTORY] CLIENT#%d %d/%02d/%02d %02d:%02d:%02d%s\n",
-                                    COLOR_WHITE, idx, ptm->tm_year+1900, ptm->tm_mon+1, ptm->tm_mday, 
-                                    ptm->tm_hour, ptm->tm_min, ptm->tm_sec, COLOR_CLEAN);
+                            switch (parse_command(buffer)) {
+                                case 1:
+                                    process_history_message();
+                                    printf("%s[COMMAND: HISTORY] CLIENT#%d %d/%02d/%02d %02d:%02d:%02d%s\n",
+                                            COLOR_WHITE, idx, ptm->tm_year+1900, ptm->tm_mon+1, ptm->tm_mday, 
+                                            ptm->tm_hour, ptm->tm_min, ptm->tm_sec, COLOR_CLEAN);
+                                    break;
+                                case 2:
+                                    printf("%s[COMMAND: PUSH] CLIENT#%d %d/%02d/%02d %02d:%02d:%02d%s\n",
+                                            COLOR_WHITE, idx, ptm->tm_year+1900, ptm->tm_mon+1, ptm->tm_mday, 
+                                            ptm->tm_hour, ptm->tm_min, ptm->tm_sec, COLOR_CLEAN);
+                                    break;
+                                case 3:
+                                    printf("%s[COMMAND: PULL] CLIENT#%d %d/%02d/%02d %02d:%02d:%02d%s\n",
+                                            COLOR_WHITE, idx, ptm->tm_year+1900, ptm->tm_mon+1, ptm->tm_mday, 
+                                            ptm->tm_hour, ptm->tm_min, ptm->tm_sec, COLOR_CLEAN);
+                                    break;
+                                case 4:
+                                    printf("%s[COMMAND: INFO] CLIENT#%d %d/%02d/%02d %02d:%02d:%02d%s\n",
+                                            COLOR_WHITE, idx, ptm->tm_year+1900, ptm->tm_mon+1, ptm->tm_mday, 
+                                            ptm->tm_hour, ptm->tm_min, ptm->tm_sec, COLOR_CLEAN);
+                                    break;
+                                case -1:
+                                    printf("%s[COMMAND: FAILED] CLIENT#%d %d/%02d/%02d %02d:%02d:%02d%s\n",
+                                            COLOR_WHITE, idx, ptm->tm_year+1900, ptm->tm_mon+1, ptm->tm_mday, 
+                                            ptm->tm_hour, ptm->tm_min, ptm->tm_sec, COLOR_CLEAN);
+                                    break;
+                                default:
+                                    printf("%s[COMMAND: UNKNOWN] CLIENT#%d %d/%02d/%02d %02d:%02d:%02d%s\n",
+                                            COLOR_WHITE, idx, ptm->tm_year+1900, ptm->tm_mon+1, ptm->tm_mday, 
+                                            ptm->tm_hour, ptm->tm_min, ptm->tm_sec, COLOR_CLEAN);
+                            }
                             send(sockfd, historyMsgBuffer, HISTORY_MSG_NUM*BUFFER_SIZE, 0);
                             continue;
                         }

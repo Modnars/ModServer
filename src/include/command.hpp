@@ -7,6 +7,7 @@
 
 #include "server.hpp"
 
+extern int parse_command(const char *cmdline);
 extern void process_history_message();
 
 #endif /* _COMMAND_HPP */
